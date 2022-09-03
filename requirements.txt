@@ -1,0 +1,3 @@
+fastenum==1.0.4
+numpy==1.23.2
+Pillow==9.2.0
