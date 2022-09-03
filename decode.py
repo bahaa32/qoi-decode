@@ -62,7 +62,7 @@ class QOIDecoder:
     def __init__(self, filename):
         self.header = None
         self.decoded_rgb = None
-        self.process(filename)
+        self.filename = filename
 
     def process(self, filename: str):
         with open(filename, 'rb') as file:
@@ -113,6 +113,7 @@ class QOIDecoder:
         self.decoded_rgb = np.reshape(decoded_rgb[:-8], (self.header.height, self.header.width, 4))
 
     def write_to(self, filename):
+        self.process(self.filename)
         data = Image.fromarray(self.decoded_rgb, 'RGBA')
         data.save(filename)
 
