@@ -2,7 +2,6 @@ import io
 from fastenum import Enum
 import numpy as np
 from PIL import Image
-from numba import njit, jit
 
 RUNNING_ARRAY_LENGTH = 64
 
@@ -46,14 +45,11 @@ def wrap(num):
         return num - 256
     return num
 
-@njit(fastmath = True)
 def calc_pixel_idx(pixel):
     r, g, b, a = pixel
     return (r * 3 + g * 5 + b * 7 + a * 11) % RUNNING_ARRAY_LENGTH
 # END HELPER FUNCTIONS
 
-# @jit(fastmath = True)
-# @profile
 def read_tag(byte):
     for tag in Tags:
         value, mask = tag.value
@@ -74,13 +70,6 @@ class QOIDecoder:
             self.decode_file(file)
 
     def decode_file(self, file: io.BufferedReader):
-        ##
-        # DEBUGGING
-        ##
-        # rgba_image = Image.open('examples/dice.png')
-        # expected_pixels = np.array(rgba_image)
-        # expected_pixels = np.reshape(expected_pixels, (self.header.height * self.header.width, 4))
-        ## END DEBUGGING
         decoded_rgb = np.empty((self.header.height * self.header.width + 8, 4), dtype=np.uint8)
         running_array = np.zeros((RUNNING_ARRAY_LENGTH, 4), dtype=np.uint8)
         prev_pixel = np.array([0, 0, 0, 255], dtype=np.uint8)
@@ -90,33 +79,32 @@ class QOIDecoder:
         while (curr_byte := file.read(1)):
             curr_byte = curr_byte[0]
             tag = read_tag(curr_byte)
-            match tag:
-                case Tags.rgb:
-                    pixels = np.append(
-                        np.frombuffer(file.read(3), dtype=np.uint8),
-                         prev_pixel[3])
-                case Tags.rgba:
-                    pixels = np.frombuffer(file.read(4), dtype=np.uint8)
-                case Tags.index:
-                    # Use the pixel in the running array based on the 6-bit idx
-                    pixels = running_array[curr_byte & 0b00111111]
-                case Tags.diff:
-                    dr, dg, db = unpack_deltas(curr_byte)
-                    # Wraparound pixel values after calculating
-                    pixels = np.fromiter(map(wrap, [prev_pixel[0] + dr, prev_pixel[1] +
-                             dg, prev_pixel[2] + db, prev_pixel[3]]), dtype=np.uint8)
-                case Tags.luma:
-                     # Wraparound pixel values after calculating
-                    dr, dg, db = unpack_luma(curr_byte, file.read(1)[0])
-                    pixels = np.fromiter(map(wrap, [prev_pixel[0] + dr, prev_pixel[1] +
-                             dg, prev_pixel[2] + db, prev_pixel[3]]), dtype=np.uint8)
-                case Tags.run:
-                    # Repeats the pixel run_length + 1 times
-                    run_length = (curr_byte & 0b00111111) + 1
-                    pixels = np.tile(prev_pixel, reps = (run_length, 1))
-                case _:
-                    raise Exception("Invalid pixel value")
-                # End processing
+            if tag == Tags.rgb:
+                pixels = np.append(
+                    np.frombuffer(file.read(3), dtype=np.uint8),
+                     prev_pixel[3])
+            elif tag == Tags.rgba:
+                pixels = np.frombuffer(file.read(4), dtype=np.uint8)
+            elif tag == Tags.index:
+                # Use the pixel in the running array based on the 6-bit idx
+                pixels = running_array[curr_byte & 0b00111111]
+            elif tag == Tags.diff:
+                dr, dg, db = unpack_deltas(curr_byte)
+                # Wraparound pixel values after calculating
+                pixels = np.fromiter(map(wrap, [prev_pixel[0] + dr, prev_pixel[1] +
+                         dg, prev_pixel[2] + db, prev_pixel[3]]), dtype=np.uint8)
+            elif tag == Tags.luma:
+                 # Wraparound pixel values after calculating
+                dr, dg, db = unpack_luma(curr_byte, file.read(1)[0])
+                pixels = np.fromiter(map(wrap, [prev_pixel[0] + dr, prev_pixel[1] +
+                         dg, prev_pixel[2] + db, prev_pixel[3]]), dtype=np.uint8)
+            elif tag == Tags.run:
+                # Repeats the pixel run_length + 1 times
+                run_length = (curr_byte & 0b00111111) + 1
+                pixels = np.tile(prev_pixel, reps = (run_length, 1))
+            else:
+                raise Exception("Invalid pixel value")
+            # End processing
             decoded_rgb[curr_idx : curr_idx + (pixels.size // 4)] = pixels
             prev_pixel = decoded_rgb[curr_idx]
             runarr_idx = calc_pixel_idx(prev_pixel)
@@ -129,8 +117,10 @@ class QOIDecoder:
         data.save(filename)
 
 def main():
-    import timeit
-    print(timeit.timeit(lambda: QOIDecoder('examples/dice.qoi'), number=20))
-    # decoder.write_to('decoded.png')
+    # Simple CLI for if we're run directly
+    input_path = input("QOI image path: ")
+    output_path = input("Output path (specify any PIL-supported image format): ")
+    decoder = QOIDecoder(input_path)
+    decoder.write_to(output_path)
 
 main()
